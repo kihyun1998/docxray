@@ -118,3 +118,47 @@ difference is that nobody thinks of it as domain code. This one was cheap becaus
 the corpus contained a counterexample; had the corpus been synthesised from the
 same assumption, it would have agreed with the gate all the way into production.
 Which is the argument for vendoring real documents, arriving unprompted.
+
+---
+
+## Re-serialising XML destroyed 21 of 24 namespaces, and Word refused the file
+
+**2026-08-19, #3.**
+
+Trimming a 40 MB real document down to a publishable 9 KB fixture. The first
+script parsed `word/document.xml` with a standard XML library, removed the
+blocks it did not want, replaced the text, and wrote the tree back. Every check
+we had passed: the zip was intact, the `officeDocument` relationship resolved,
+the main part existed, no original text survived.
+
+Word:
+
+> 이 파일의 일부가 없거나 잘못되었으므로 해당 파일을 열 수 없습니다.
+> 위치: 부분: /word/document.xml, 줄: 0, 열: 0
+
+Two causes, both found by probing rather than guessing.
+
+**The original declares 24 namespaces; the round-trip kept 3.** An XML library
+preserves only the prefixes it has been told about, so `w14:paraId` came back as
+`ns1:paraId` and `r:id` as `ns2:id` — 27 attributes renamed, and `standalone="yes"`
+dropped from the declaration for good measure.
+
+**The body ended with a table.** The kept blocks happened to end with `</w:tbl>`,
+followed directly by `<w:sectPr>`. The schema permits it. Word does not.
+
+**What it changed.** The script now splices the original XML as text and never
+re-serialises it, and appends a paragraph when the body would otherwise end with
+a table. Namespaces: 24 of 24. Auto-generated prefixes: zero. Word opens it.
+
+**The rules it earned.** Two, and the second is the sharper one.
+
+*The failure was ADR-0001, reproduced in a fixture script.* "Never round-trip,
+splice in place" was written about the product, and a helper script violated it
+within a day. What Word did to that script is exactly what it would do to a user's
+document if the writer ever re-serialises a part.
+
+*Schema-legal and Word-opens-it are different claims.* Nothing about the
+table-at-end-of-body rule is in the specification, so no validator would have
+caught it. Six gates were green; the seventh check was a person double-clicking a
+file. That is why opening output in Word is a release-gate item in
+`docs/agents/theflow.md` and not an aspiration.

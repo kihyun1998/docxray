@@ -20,15 +20,29 @@ what it does **not** cover.
 
 ## Ours
 
-Nothing yet. What is still needed is exactly what the vendored corpus cannot
-supply, and all of it requires a person with Word:
+| File | What it exercises | Origin |
+| ---- | ----------------- | ------ |
+| `korean-generated-export.docx` | Generated-export package shape: `[Content_Types].xml` last in the archive, no `docProps`, and **`Heading1`–`Heading6` defined with no `w:outlineLvl` at all** — the document behind the outline-level war story. Korean run fonts, 95 KB of `numbering.xml`, one table, highlight and shading, 226 `rsid` attributes | Trimmed from a real Korean product manual (40 MB → 9 KB). Confirmed to open in Word |
 
-| Needed | Why nothing vendored covers it |
-| ------ | ------------------------------ |
-| A document authored in Korean Word | Nothing vendored pairs a Latin with a Hangul font in `w:rFonts`, or carries the meaningless style identifiers a localised Word produces |
+Still needed, and all of it requires a person with Word:
+
+| Needed | Why nothing above covers it |
+| ------ | --------------------------- |
+| A document **authored** in Korean Word | `korean-generated-export.docx` sets all four `w:rFonts` attributes to the same value, so a Latin/Hangul font split is still untested — as are the meaningless style identifiers a localised Word produces |
 | A document converted from HWP | Absent from every public corpus checked |
-| A trimmed real-world document | The generator shape that omits `docProps` entirely — the one that produced the outline-level war story |
-| Something long | Nothing vendored is more than a few pages, so nothing exercises `outline` at the scale that motivates it |
+| Something long | Nothing here is more than a few pages, so nothing exercises `outline` at the scale that motivates it |
+
+### How `korean-generated-export.docx` was derived
+
+The recipe matters, because the first attempt produced a file Word refused.
+
+1. **Copy the original**; never trim in place.
+2. **Splice the XML as text.** Do not parse and re-serialise `document.xml` — see the war story in `docs/agents/lessons.md`.
+3. Keep one paragraph per distinct style, a few list items, a couple carrying highlight and shading, and one table. Drop every paragraph containing an image.
+4. **Append a paragraph if the body would otherwise end with a table.** Word rejects a body ending in `</w:tbl>` even though the schema permits it.
+5. Replace the text of every `<w:t>`, keeping run boundaries so run splitting stays realistic.
+6. Prune relationships the trimmed document no longer references, then the media they pointed at.
+7. **Open the result in Word.** Nothing before this step is evidence.
 
 ## Sanitising, before anything of ours is committed
 

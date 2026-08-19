@@ -37,7 +37,7 @@ jobs:
         run: cargo test --workspace
 
       - name: doc
-        run: cargo doc --no-deps
+        run: cargo doc --no-deps -p docxray
 
       # Catches dependencies that genuinely cannot build for wasm (C shims,
       # platform-specific crates). It does NOT catch filesystem use in the core:

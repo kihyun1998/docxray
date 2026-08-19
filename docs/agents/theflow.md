@@ -236,7 +236,7 @@ to prose here.
 cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-cargo doc --no-deps
+cargo doc --no-deps -p docxray
 cargo check -p docxray --target wasm32-unknown-unknown
 bash scripts/check-core-io-free.sh
 bash scripts/check-fixtures.sh

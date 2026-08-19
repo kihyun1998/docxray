@@ -57,3 +57,17 @@ _Avoid_: base style, fallback format
 **Opaque Node**:
 Anything in the Original the parser does not model. It is preserved verbatim and never surfaced in a Projection, so an edit cannot damage it.
 _Avoid_: unknown element, passthrough, unsupported content
+
+### Projection syntax
+
+**Pipe Form**:
+The Projection's rendering of a table whose geometry fits an ordinary Markdown table — full-width rows, no spans, no vertical merges, one paragraph per cell.
+_Avoid_: simple table, markdown table
+
+**Grid Form**:
+The Projection's rendering of a table whose geometry does not fit an ordinary Markdown table. Still a pipe table, with each Anchor carrying the cell's span, vertical-merge state, and its row's leading and trailing gap.
+_Avoid_: complex table, extended table
+
+**Detached Cell**:
+A cell whose content cannot be written inside a pipe cell — more than one paragraph, or a nested table — and so appears as anchored Blocks following the table.
+_Avoid_: overflow cell, external cell

@@ -53,6 +53,21 @@ LibreOffice do not lay out `gridSpan`/`vMerge` identically.
 `docs/agents/lessons.md`: a document that *does* carry outline levels, so
 heading detection can be tested from both sides.
 
+**East-Asian typography is covered, contrary to what this file first claimed.**
+Thirteen of the sixteen fixtures carry east-Asian font state, and the claim that
+none did was written twice before anyone checked. Verified by unzipping every
+file:
+
+- `del_in_ins.docx` sets `w:ascii="Arial"` with `w:eastAsia="Malgun Gothic"` —
+  the Latin/Hangul split, in direct run formatting.
+- `grid_after.docx` pairs `Century` with `ＭＳ 明朝` and carries `w:hint`.
+- Six fixtures carry the meaningless style identifiers a localised Word emits —
+  `a`, `a0`, `a3`, `1`, `10`, `20` — and eight carry localised style *names*
+  (`見出し 1`, `索引`, `コメント文字列`).
+- `outline_lvl.docx` has all three at once: `styleId="1"` with
+  `w:name="見出し 1"` and an outline level. It is a Japanese Word document, and
+  the mechanism a localised Word uses is the same whichever language it is.
+
 `indent_word_online.docx` turned out to be the most valuable file here for a
 reason its name does not suggest. Its main document part is `word/document2.xml`.
 That is legal — the part name is not fixed by the specification; it is resolved
@@ -64,10 +79,6 @@ other fixture in this directory and fails on this one.
 
 Named explicitly, because a gap nobody wrote down is a gap nobody fills:
 
-- **No CJK-authored document.** Nothing here pairs a Latin font with a Hangul or
-  Japanese font in `w:rFonts`, and nothing carries the meaningless style
-  identifiers a localised Word produces. This is docxray's own distinctive risk
-  and it is entirely uncovered here.
 - **No HWP-converted document.**
 - **No generator export of the kind that omits `docProps` entirely** — the shape
   that produced the outlineLvl war story. `indent_word_online.docx` is

@@ -162,3 +162,36 @@ table-at-end-of-body rule is in the specification, so no validator would have
 caught it. Six gates were green; the seventh check was a person double-clicking a
 file. That is why opening output in Word is a release-gate item in
 `docs/agents/theflow.md` and not an aspiration.
+
+---
+
+## Seven green gates could not see that the fixture looked wrong
+
+**2026-08-19, #3.**
+
+The trimmed fixture passed every check we had — valid package, main part
+resolving, no original text surviving, Word opening it without complaint. Then a
+screenshot arrived. Several paragraphs rendered with their words stretched right
+across the page:
+
+> 구조&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;검증을&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;위한&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;문장.
+
+Not a rendering quirk — a data defect. 104 of that document's paragraphs are
+`w:jc="both"`, and the scrubbing step had replaced every `<w:t>` with a whole
+sentence regardless of the original's size. Original text nodes had a median
+length of 21 characters; the replacements ran 9 to 33, and a paragraph with
+several runs grew until it wrapped. Justification then stretched every line but
+the last.
+
+**What it changed.** Replacement text now matches the original's length exactly —
+1,129 characters in the small fixture, 9,594 in the long one. Line breaking
+returns to where the real document had it, which matters beyond appearance: line
+breaking is part of what decides how Word splits runs, and run splitting is
+precisely what the parser has to cope with.
+
+**The rule it earned.** *A corpus has a property no gate can check: whether it
+still looks like the thing it was taken from.* Every check we ran reads XML, and
+from XML "short text in a justified paragraph" is unremarkable. The defect was
+only visible to someone looking at a rendered page — which is the same reason
+opening output in Word is a release-gate item, arriving here from the other
+direction: not "does it open" but "does it still look like a document".

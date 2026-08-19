@@ -100,6 +100,10 @@ members so far:
 - `sectPr` — section properties, including the final body-level one
 - Relationship identifiers binding runs to media and hyperlinks
 - `[Content_Types].xml` defaults and overrides, whose part ordering varies by producer
+- **Part names themselves.** The main document part is *not* fixed at
+  `word/document.xml` — it is resolved through the `officeDocument` relationship
+  in `_rels/.rels`, and Word Online writes `word/document2.xml`. Confirmed
+  against a real fixture; see `docs/agents/lessons.md`.
 
 ### The project's own map
 
@@ -235,6 +239,7 @@ cargo test --workspace
 cargo doc --no-deps
 cargo check -p docxray --target wasm32-unknown-unknown
 bash scripts/check-core-io-free.sh
+bash scripts/check-fixtures.sh
 ```
 
 The last two lines cover the same blind spot from different sides, and only one
@@ -246,6 +251,11 @@ check does not close that gap either** — `wasm32-unknown-unknown` ships a std
 where `std::fs` compiles and merely fails at runtime, confirmed by probe (see
 `docs/agents/lessons.md`). It stays in the matrix because it catches a different
 real failure: a dependency that cannot build for wasm at all.
+
+**`scripts/check-fixtures.sh`** guards the corpus every test at the seam depends
+on: each fixture must be a readable package whose main part, resolved through its
+`officeDocument` relationship, actually exists. Fixtures arrive over the network
+and one has already turned up as a 404 body wearing a `.docx` name.
 
 **`scripts/check-core-io-free.sh` is what actually enforces ADR-0002.** It scans
 the core for `std::fs`, `std::path`, `std::net`, `std::env`, `std::process` and

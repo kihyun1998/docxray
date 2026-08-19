@@ -80,3 +80,41 @@ gates, because a green gate is read as evidence by everyone downstream and
 nobody re-derives the reasoning behind it. Cost of checking: one probe. Cost of
 not checking: an architectural promise that erodes invisibly until the first
 WASM build, months later.
+
+---
+
+## The main document part is not always `word/document.xml`
+
+**2026-08-19, #3.**
+
+A fixture-integrity gate was added to catch truncated downloads — one fixture had
+already arrived as a 14-byte 404 body while looking like a successful fetch. The
+check was: is it a readable zip, and does it contain `word/document.xml`?
+
+It failed on its first run, against `indent_word_online.docx`:
+
+```
+no word/document.xml: tests/fixtures/vendor/docx-rs/indent_word_online.docx
+```
+
+The file was fine. **The gate was wrong.** That package's main part is
+`word/document2.xml`. The part name is not fixed by the specification — it is
+resolved by following the `officeDocument` relationship in `_rels/.rels`, and
+Word Online writes `document2.xml`. `[Content_Types].xml` declares the content
+type independently of the name.
+
+So the very first thing written against the corpus made exactly the assumption
+docxray's parser must not make, and a real document caught it within minutes.
+
+**What it changed.** `scripts/check-fixtures.sh` now resolves the main part
+through the package relationships instead of by name. The fact went into the
+hidden-state list in `docs/agents/theflow.md`, because part naming is state that
+carries meaning and never appears in a Projection.
+
+**The rule it earned.** *A naive assumption written into a check is still a naive
+assumption.* Test scaffolding gets written quickly and reviewed loosely, and it
+encodes beliefs about the domain just as firmly as the parser does — the
+difference is that nobody thinks of it as domain code. This one was cheap because
+the corpus contained a counterexample; had the corpus been synthesised from the
+same assumption, it would have agreed with the gate all the way into production.
+Which is the argument for vendoring real documents, arriving unprompted.

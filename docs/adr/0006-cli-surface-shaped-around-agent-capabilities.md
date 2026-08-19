@@ -4,7 +4,8 @@ The CLI is the only adapter in v1, with four commands:
 
 ```
 docxray open    report.docx          -> report.dxr + .docxray/anchors.json
-docxray apply   report.dxr           -> rewrites report.docx
+docxray apply   report.dxr           -> writes report.out.docx
+docxray apply   report.dxr --in-place-> rewrites report.docx
 docxray apply   report.dxr --dry-run -> prints the Patch Operations
 docxray check   report.dxr           -> exit code and errors only
 docxray outline report.dxr           -> line numbers, heading tree, Block summary
@@ -20,5 +21,7 @@ Designing a CLI for an agent is not a matter of adding commands; it is cutting t
 
 - `check` stays separate from `--dry-run` even though both validate. `check` returns an exit code and errors; `--dry-run` prints the Patch Operations. Cheap self-validation before applying costs fewer round trips than a failed `apply` followed by a retry.
 - `apply` compares a hash of the Original and refuses a Stale Projection rather than patching against a document that moved underneath it.
+- **`apply` does not overwrite by default.** Writing over the Original needs `--in-place`. This tool exists because a `.docx` is often the only copy of something, and a bug in patch-back would otherwise destroy exactly what the product promises to protect. A safe default costs one flag; the alternative costs a document.
+- **Before any write, the produced bytes are re-read and compared part by part against the Original, and the write is abandoned if untouched parts differ.** The comparison harness built for the test seam (ADR-0008) is the same code, so the check is nearly free — and it guards documents unlike anything in the fixture corpus, which is where the tests cannot reach.
 - The sidecar is a hidden coupling: a `.dxr` copied or moved without its `.docxray/` directory is dead. `apply` must fail loudly and say why, since the agent cannot see the coupling from the Projection alone.
 - The Projection and its sidecar are working files, not deliverables. They live in the working directory and are best gitignored.

@@ -22,15 +22,20 @@ what it does **not** cover.
 
 | File | What it exercises | Origin |
 | ---- | ----------------- | ------ |
-| `korean-generated-export.docx` | Generated-export package shape: `[Content_Types].xml` last in the archive, no `docProps`, and **`Heading1`–`Heading6` defined with no `w:outlineLvl` at all** — the document behind the outline-level war story. Korean run fonts, 95 KB of `numbering.xml`, one table, highlight and shading, 226 `rsid` attributes | Trimmed from a real Korean product manual (40 MB → 9 KB). Confirmed to open in Word |
+| `korean-generated-export.docx` | Generated-export package shape: `[Content_Types].xml` last in the archive, no `docProps`, and **`Heading1`–`Heading6` defined with no `w:outlineLvl` at all** — the document behind the outline-level war story. Korean run fonts, 95 KB of `numbering.xml`, one table, highlight and shading, 226 `rsid` attributes. 26 paragraphs | Trimmed from a real Korean product manual, 40 MB → 9 KB. Opens in Word |
+| `korean-generated-export-long.docx` | The same package at working scale: **498 paragraphs, 54 headings across five levels**, 3 tables, 59 list items, 33 highlights, 43 shadings, 4344 `rsid` attributes. This is what `outline` and ranged reading are for; nothing else in the corpus is bigger than 26 paragraphs | Same original, every non-image block kept. 16 KB. Opens in Word |
 
-Still needed, and all of it requires a person with Word:
+Still needed:
 
 | Needed | Why nothing above covers it |
 | ------ | --------------------------- |
-| A document **authored** in Korean Word | `korean-generated-export.docx` sets all four `w:rFonts` attributes to the same value, so a Latin/Hangul font split is still untested — as are the meaningless style identifiers a localised Word produces |
-| A document converted from HWP | Absent from every public corpus checked |
-| Something long | Nothing here is more than a few pages, so nothing exercises `outline` at the scale that motivates it |
+| A document converted from HWP | Absent from every public corpus checked. Needs a person with HWP |
+
+East-Asian typography is **not** a gap, contrary to what this file claimed twice
+before anyone counted: thirteen of the vendored fixtures carry east-Asian font
+state, `del_in_ins.docx` pairs `w:ascii="Arial"` with `w:eastAsia="Malgun Gothic"`,
+and six carry the meaningless style identifiers a localised Word emits. See
+`vendor/docx-rs/README.md`.
 
 ### How `korean-generated-export.docx` was derived
 
@@ -40,7 +45,7 @@ The recipe matters, because the first attempt produced a file Word refused.
 2. **Splice the XML as text.** Do not parse and re-serialise `document.xml` — see the war story in `docs/agents/lessons.md`.
 3. Keep one paragraph per distinct style, a few list items, a couple carrying highlight and shading, and one table. Drop every paragraph containing an image.
 4. **Append a paragraph if the body would otherwise end with a table.** Word rejects a body ending in `</w:tbl>` even though the schema permits it.
-5. Replace the text of every `<w:t>`, keeping run boundaries so run splitting stays realistic.
+5. Replace the text of every `<w:t>` **with the same number of characters**, keeping run boundaries. Filling each node with a whole sentence regardless of its original size inflates paragraphs until they wrap, and 104 of this document's paragraphs are justified — so the earlier lines of a wrapped paragraph get stretched across the page. Preserving length keeps line breaking, and therefore run splitting, close to the real document.
 6. Prune relationships the trimmed document no longer references, then the media they pointed at.
 7. **Open the result in Word.** Nothing before this step is evidence.
 

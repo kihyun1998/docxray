@@ -1,0 +1,18 @@
+# Rust
+/target/
+
+# docxray working files — a Projection's sidecar is never a deliverable (ADR-0006)
+.docxray/
+/*.dxr
+
+# Fixture staging.
+#
+# Real documents that have NOT yet been trimmed and sanitised live here and are
+# never committed — this repository is public, and a .docx carries more than it
+# shows on screen (deleted text inside tracked changes, comments, author and
+# company properties).
+#
+# Trim and sanitise first, then commit the result to tests/fixtures/.
+# Documents that cannot be sanitised stay here permanently; tests skip when they
+# are absent.
+tests/fixtures-local/

@@ -49,3 +49,8 @@ jobs:
       # This is what actually enforces ADR-0002's IO-agnostic core.
       - name: core stays IO-free
         run: bash scripts/check-core-io-free.sh
+
+      # Fixtures arrive over the network; one has already turned up as a 404
+      # body wearing a .docx name. Every test at the seam depends on them.
+      - name: fixtures are readable packages
+        run: bash scripts/check-fixtures.sh

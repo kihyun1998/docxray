@@ -25,11 +25,13 @@ what it does **not** cover.
 | `korean-generated-export.docx` | Generated-export package shape: `[Content_Types].xml` last in the archive, no `docProps`, and **`Heading1`–`Heading6` defined with no `w:outlineLvl` at all** — the document behind the outline-level war story. Korean run fonts, 95 KB of `numbering.xml`, one table, highlight and shading, 226 `rsid` attributes. 26 paragraphs | Trimmed from a real Korean product manual, 40 MB → 9 KB. Opens in Word |
 | `korean-generated-export-long.docx` | The same package at working scale: **498 paragraphs, 54 headings across five levels**, 3 tables, 59 list items, 33 highlights, 43 shadings, 4344 `rsid` attributes. This is what `outline` and ranged reading are for; nothing else in the corpus is bigger than 26 paragraphs | Same original, every non-image block kept. 16 KB. Opens in Word |
 
-Still needed:
+### Known gap, deliberately left open
 
-| Needed | Why nothing above covers it |
-| ------ | --------------------------- |
-| A document converted from HWP | Absent from every public corpus checked. Needs a person with HWP |
+No document converted from HWP. The corpus covers four producers — Word desktop,
+LibreOffice, Word Online and a generator export — and nothing measured says an
+HWP converter differs from all four in a way that matters. Add one when a real
+HWP-converted document actually breaks something, rather than on the assumption
+that it will (ADR-0005, amended).
 
 East-Asian typography is **not** a gap, contrary to what this file claimed twice
 before anyone counted: thirteen of the vendored fixtures carry east-Asian font

@@ -12,4 +12,6 @@ The intuitive scope axis — "content edits are easy, structural edits are hard"
 
 - Tables are fully supported in v1; they are too central to real documents to defer.
 - Input documents are assumed fully wild — files made in Korean Word, converted from HWP, exported from Google Docs, with tracked changes left on. Preserving unmodelled elements as Opaque Nodes is therefore a day-one requirement, not a later hardening pass.
+
+  **Amended 2026-08-19 (#3).** This stays the product's aim, and nothing about it narrows: unmodelled content is still preserved whatever produced it. What changed is the *corpus*. Documents converted from HWP are not represented and chasing one was dropped, because the corpus already covers four producers — Word desktop, LibreOffice, Word Online and a generator export — and nothing measured says an HWP converter differs from all four in a way that matters. Assuming an unmeasured difference is the mistake this project made twice about east-Asian coverage in a single day. Add the fixture when a real HWP-converted document actually breaks something.
 - Sample docx files are still needed as test fixtures. That is a corpus, not a feature, and is unaffected by this scope decision.

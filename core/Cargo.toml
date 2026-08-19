@@ -1,0 +1,18 @@
+[package]
+name = "docxray"
+description = "Surgical DOCX editing: project a Word document into an editable text view, edit it, and patch the changes back, leaving untouched content byte-identical."
+keywords = ["docx", "ooxml", "word", "office"]
+categories = ["parser-implementations", "text-processing"]
+readme = "../README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[lib]
+name = "docxray"
+path = "src/lib.rs"
+
+[dependencies]

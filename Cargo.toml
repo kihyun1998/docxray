@@ -1,0 +1,15 @@
+[workspace]
+resolver = "3"
+members = ["core", "cli"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/kihyun1998/docxray"
+authors = ["Ki Hyun Park"]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1

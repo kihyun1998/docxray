@@ -62,12 +62,12 @@ defect. All decided in ADR-0009.
 
 Committed shape, to be realised by #2:
 
-- **`docxray-core`** — library. OPC handling, XML parse and serialise, Block
+- **`docxray`** — library, in `core/`. Package name and directory name differ deliberately: the crate people depend on gets the good name, as `docx-rs` does with its `docx-core/` directory. OPC handling, XML parse and serialise, Block
   identification, Anchor issuance, Projection render and parse, Patch Operation
   planning, Style Catalogue, validation, and the agent-facing text of every
   error. Public API is `&[u8]` in, bytes or a Projection out. **No filesystem or
   path types** (ADR-0002).
-- **`docxray-cli`** — binary. Argument parsing, file IO, sidecar placement, exit
+- **`docxray-cli`** — binary crate in `cli/`, producing a binary named `docxray`. Not published to the registry. Argument parsing, file IO, sidecar placement, exit
   codes, terminal presentation. Thin by construction (ADR-0006).
 
 Both members sit inside the top-level test workspace. There are no
@@ -233,13 +233,25 @@ cargo fmt --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 cargo doc --no-deps
-cargo check -p docxray-core --target wasm32-unknown-unknown
+cargo check -p docxray --target wasm32-unknown-unknown
+bash scripts/check-core-io-free.sh
 ```
 
-The last line is not optional. `cargo test --workspace` runs on the host, so
-without a target check nothing stops someone adding `std::fs` to the core and
-every gate still passes — ADR-0002's promise would erode silently and the break
-would surface months later when WASM is first attempted.
+The last two lines cover the same blind spot from different sides, and only one
+of them works the way it looks like it should.
+
+`cargo test --workspace` builds for the host, so nothing in the first four lines
+notices a core that has quietly started using the filesystem. The **wasm target
+check does not close that gap either** — `wasm32-unknown-unknown` ships a std
+where `std::fs` compiles and merely fails at runtime, confirmed by probe (see
+`docs/agents/lessons.md`). It stays in the matrix because it catches a different
+real failure: a dependency that cannot build for wasm at all.
+
+**`scripts/check-core-io-free.sh` is what actually enforces ADR-0002.** It scans
+the core for `std::fs`, `std::path`, `std::net`, `std::env`, `std::process` and
+`PathBuf`, ignoring comments, and fails the build if any appear. Crude, but it
+fails when the contract is broken and passes when it is not, which is the only
+property that matters in a gate.
 
 ### Branch and PR convention
 

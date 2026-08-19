@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  gates:
+    name: gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup target add wasm32-unknown-unknown
+          rustup default stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: fmt
+        run: cargo fmt --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: test
+        run: cargo test --workspace
+
+      - name: doc
+        run: cargo doc --no-deps
+
+      # Catches dependencies that genuinely cannot build for wasm (C shims,
+      # platform-specific crates). It does NOT catch filesystem use in the core:
+      # wasm32-unknown-unknown ships a std where `std::fs` compiles and only
+      # fails at runtime. Verified by probe — see docs/agents/lessons.md.
+      - name: core builds for wasm
+        run: cargo check -p docxray --target wasm32-unknown-unknown
+
+      # This is what actually enforces ADR-0002's IO-agnostic core.
+      - name: core stays IO-free
+        run: bash scripts/check-core-io-free.sh

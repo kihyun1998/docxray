@@ -1,0 +1,19 @@
+[package]
+name = "docxray-cli"
+description = "Command-line interface for docxray."
+readme = "../README.md"
+publish = false
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[[bin]]
+name = "docxray"
+path = "src/main.rs"
+
+[dependencies]
+docxray = { path = "../core", version = "0.0.0" }
+clap = { version = "4.6.6", features = ["derive"] }

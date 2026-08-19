@@ -1,10 +1,10 @@
-# docxmd
+# docxray
 
 ## Agent skills
 
 ### Issue tracker
 
-Issues live in this repo's GitHub Issues (`kihyun1998/docxmd`), managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues live in this repo's GitHub Issues (`kihyun1998/docxray`), managed via the `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 

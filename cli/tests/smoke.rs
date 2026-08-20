@@ -361,3 +361,119 @@ fn writing_leaves_no_temporary_behind() {
 
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `open` used to replace an edited Projection with a fresh one under exit 0,
+/// destroying whatever the agent had written. The guard compares content rather
+/// than existence, so re-projecting an *unedited* Projection — the documented
+/// recovery from a Stale one — still goes through silently.
+#[test]
+fn open_refuses_to_discard_an_edited_projection() {
+    let dir = scratch("editedproj", "vendor/docx-rs/paragraph.docx");
+    let docx = dir.join("report.docx");
+    let dxr = dir.join("report.dxr");
+
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "first open should succeed"
+    );
+
+    // Re-projecting an untouched Projection is the ordinary recovery path and
+    // must not need a flag.
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "re-projecting an unedited Projection should not be refused"
+    );
+
+    let edited = "AGENT EDIT IN PROGRESS <!--p0-->\n";
+    std::fs::write(&dxr, edited).expect("write an edit");
+
+    let out = docxray(&["open", docx.to_str().expect("utf-8 path")]);
+    assert!(!out.status.success(), "should exit non-zero");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--force"),
+        "should say how to override: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&dxr).expect("the projection"),
+        edited,
+        "the edit must survive"
+    );
+
+    // And --force does what it says.
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path"), "--force"])
+            .status
+            .success(),
+        "--force should overwrite"
+    );
+    assert_ne!(
+        std::fs::read_to_string(&dxr).expect("the projection"),
+        edited,
+        "--force should have replaced it"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `apply` writes `<stem>.out.docx`, which is a name a user's own document can
+/// have. It replaced a 9241-byte unrelated document with its output under exit
+/// 0. Re-applying its *own* output is unaffected, because `apply` is
+/// deterministic — the bytes match, so the guard never sees a difference.
+#[test]
+fn apply_refuses_to_overwrite_a_document_it_did_not_produce() {
+    let dir = scratch("outcollide", "vendor/docx-rs/paragraph.docx");
+    let docx = dir.join("report.docx");
+    let out = dir.join("report.out.docx");
+
+    let mut other = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    other.pop();
+    other.push("tests/fixtures/korean-generated-export.docx");
+    std::fs::copy(&other, &out).expect("an unrelated document sits there");
+    let victim = std::fs::read(&out).expect("the victim");
+
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "open should succeed"
+    );
+
+    let attempt = docxray(&[
+        "apply",
+        dir.join("report.dxr").to_str().expect("utf-8 path"),
+    ]);
+    assert!(!attempt.status.success(), "should exit non-zero");
+    assert_eq!(
+        std::fs::read(&out).expect("the victim"),
+        victim,
+        "the unrelated document must be intact"
+    );
+
+    // With --force it proceeds, and re-applying afterwards needs no flag at all.
+    assert!(
+        docxray(&[
+            "apply",
+            dir.join("report.dxr").to_str().expect("utf-8 path"),
+            "--force"
+        ])
+        .status
+        .success(),
+        "--force should proceed"
+    );
+    assert!(
+        docxray(&[
+            "apply",
+            dir.join("report.dxr").to_str().expect("utf-8 path")
+        ])
+        .status
+        .success(),
+        "re-applying over our own identical output must not need --force"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

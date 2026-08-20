@@ -16,6 +16,8 @@ docxray apply report.dxr     # -> report.out.docx
 
 `apply` never writes over the Original: a `.docx` is often the only copy of something. It refuses a Projection whose Original moved underneath it, and it compares its own output against the Original part by part before handing it back.
 
+Neither command destroys a file it did not produce. Both compare against what they are about to write, so re-projecting an unedited Projection or re-applying an unchanged one goes through silently, while a Projection carrying edits, or an output file that turns out to be somebody's document, is refused until you pass `--force`.
+
 ## Layout
 
 | | |

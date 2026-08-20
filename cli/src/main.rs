@@ -36,11 +36,17 @@ enum Command {
     Open {
         /// The `.docx` to project.
         file: PathBuf,
+        /// Overwrite a Projection that carries changes of its own.
+        #[arg(long)]
+        force: bool,
     },
     /// Patch a Projection's edits back into the document it came from.
     Apply {
         /// The `.dxr` to apply. Its Original and sidecar are found beside it.
         file: PathBuf,
+        /// Overwrite an existing output that is not what this run produces.
+        #[arg(long)]
+        force: bool,
     },
 }
 
@@ -63,8 +69,8 @@ fn main() -> ExitCode {
 
 fn run(command: Command) -> Result<(), String> {
     match command {
-        Command::Open { file } => open(&file),
-        Command::Apply { file } => apply(&file),
+        Command::Open { file, force } => open(&file, force),
+        Command::Apply { file, force } => apply(&file, force),
     }
 }
 
@@ -74,6 +80,33 @@ fn run(command: Command) -> Result<(), String> {
 /// leaves a shortened file where a document was. Both references do it this way
 /// — docxengine `mkstemp` + `os.replace`, docx-cli write-then-rename — and
 /// ADR-0006's premise is that a `.docx` is often the only copy of something.
+/// Writes, refusing to destroy a file that is not already what we are about to
+/// write.
+///
+/// Not "refuse if it exists": re-projecting is the documented recovery from a
+/// Stale Projection, and re-applying is the ordinary edit loop, so a bare
+/// existence check would refuse the two things a user is most often doing.
+/// Comparing against the *content* costs nothing here — `open` and `apply` are
+/// both deterministic, so a rerun that changed nothing writes identical bytes
+/// and passes silently — and it refuses exactly the case worth refusing: a file
+/// holding something this run did not produce.
+///
+/// What that protects, measured before the guard existed: `open report.docx`
+/// replaced an edited `report.dxr` with a fresh Projection, and `apply` replaced
+/// an unrelated 9241-byte `report.out.docx` with its output. Both under exit 0.
+fn write_guarded(path: &Path, bytes: &[u8], force: bool, hint: &str) -> Result<(), String> {
+    if !force
+        && let Ok(existing) = std::fs::read(path)
+        && existing != bytes
+    {
+        return Err(format!(
+            "refusing to overwrite {}: it holds something this run did not produce ({hint}). Pass --force to replace it",
+            path.display()
+        ));
+    }
+    write_atomically(path, bytes)
+}
+
 fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let mut tmp = path.as_os_str().to_os_string();
     tmp.push(".docxray-tmp");
@@ -110,7 +143,7 @@ fn sidecar_path(dxr: &Path) -> Result<PathBuf, String> {
         .join(name))
 }
 
-fn apply(dxr: &Path) -> Result<(), String> {
+fn apply(dxr: &Path, force: bool) -> Result<(), String> {
     let projection =
         std::fs::read_to_string(dxr).map_err(|e| format!("cannot read {}: {e}", dxr.display()))?;
 
@@ -141,13 +174,13 @@ fn apply(dxr: &Path) -> Result<(), String> {
     // Never over the Original: a `.docx` is often the only copy of something
     // (ADR-0006). Overwriting will need an explicit flag.
     let out = dxr.with_extension("out.docx");
-    write_atomically(&out, &produced)?;
+    write_guarded(&out, &produced, force, "a different document")?;
 
     println!("{} -> {}", dxr.display(), out.display());
     Ok(())
 }
 
-fn open(file: &Path) -> Result<(), String> {
+fn open(file: &Path, force: bool) -> Result<(), String> {
     let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
     let projection = docxray::open(&bytes).map_err(|e| e.to_string())?;
 
@@ -161,7 +194,12 @@ fn open(file: &Path) -> Result<(), String> {
             file.display()
         ));
     }
-    write_atomically(&dxr, projection.text.as_bytes())?;
+    write_guarded(
+        &dxr,
+        projection.text.as_bytes(),
+        force,
+        "an edited Projection, or one made from another document",
+    )?;
 
     // One sidecar per document rather than a single shared file: two documents
     // projected in the same directory would otherwise overwrite each other's
@@ -170,7 +208,12 @@ fn open(file: &Path) -> Result<(), String> {
     let sidecar = sidecar_path(&dxr)?;
     let dir = sidecar.parent().unwrap_or(Path::new("."));
     std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    write_atomically(&sidecar, projection.sidecar().as_bytes())?;
+    write_guarded(
+        &sidecar,
+        projection.sidecar().as_bytes(),
+        force,
+        "another document's Anchors",
+    )?;
 
     println!(
         "{} — {} blocks -> {}",

@@ -23,7 +23,7 @@ The state of a Projection whose Original has changed since the Projection was ma
 _Avoid_: outdated, dirty, out-of-sync
 
 **Fingerprint**:
-The recorded identity of the Original a Projection was made from, carried in its sidecar. Patch-back recomputes it and refuses when it no longer matches, which is how a Projection is found to be Stale — or found to have been paired with another document's sidecar.
+The recorded identity of the Original a Projection was made from, carried both on the Projection's last line and in its sidecar. Patch-back recomputes it and refuses when it no longer matches. Recording it in both places is what separates a Stale Projection from one paired with the wrong sidecar, or from one belonging to another document entirely.
 _Avoid_: checksum, hash, digest, etag
 
 ### Addressing

@@ -219,15 +219,96 @@ fn a_projection_whose_original_moved_is_refused() {
     let error = docxray::apply(&moved, &projection.text, &projection.sidecar())
         .expect_err("a moved Original should be refused");
 
+    // Stale means the Projection and its sidecar agree with each other and not
+    // with the Original. It no longer has to hedge about a mismatched sidecar,
+    // because that case is now distinguishable and gets its own error.
+    assert!(
+        matches!(error, docxray::Error::Stale { .. }),
+        "expected Stale, got: {error:?}"
+    );
     let said = error.to_string();
     assert!(
-        said.contains("re-open"),
+        said.contains("Project it again"),
         "the error should say how to recover: {said}"
     );
     assert!(
-        said.contains("sidecar"),
-        "and name the other cause — a Projection paired with the wrong sidecar: {said}"
+        said.contains("sha256:"),
+        "and carry both Fingerprints so an adapter need not parse prose: {said}"
     );
+}
+
+/// A Projection from another document, applied to this Original. Before the
+/// Fingerprint rode the Projection itself, this was reported as "has been
+/// edited" — the wrong file diagnosed as the wrong content, which sends an
+/// agent to fix its text instead of its paths.
+#[test]
+fn a_projection_from_another_document_is_told_apart_from_an_edit() {
+    let original = fixture("vendor/docx-rs/paragraph.docx");
+    let mine = docxray::open(&original).expect("should project");
+    let theirs =
+        docxray::open(&fixture("vendor/docx-rs/hello_libre_office.docx")).expect("should project");
+
+    let error = docxray::apply(&original, &theirs.text, &mine.sidecar())
+        .expect_err("a foreign Projection should be refused");
+
+    assert!(
+        matches!(error, docxray::Error::ForeignProjection { .. }),
+        "expected ForeignProjection, got: {error:?}"
+    );
+    assert!(
+        !error.to_string().contains("edited"),
+        "and must not blame the content: {error}"
+    );
+}
+
+/// The mirror case: the Projection belongs to this Original, the sidecar does
+/// not. ADR-0006 calls that worse than no sidecar at all, because the Anchors
+/// resolve — to the wrong Blocks.
+#[test]
+fn a_sidecar_from_another_document_is_told_apart_from_staleness() {
+    let original = fixture("vendor/docx-rs/paragraph.docx");
+    let mine = docxray::open(&original).expect("should project");
+    let theirs =
+        docxray::open(&fixture("vendor/docx-rs/hello_libre_office.docx")).expect("should project");
+
+    let error = docxray::apply(&original, &mine.text, &theirs.sidecar())
+        .expect_err("a foreign sidecar should be refused");
+
+    assert!(
+        matches!(error, docxray::Error::ForeignSidecar),
+        "expected ForeignSidecar, got: {error:?}"
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("Anchors resolve to the wrong Blocks"),
+        "and say what goes wrong if it were allowed: {error}"
+    );
+}
+
+/// Text that never came from `open` — hand-written Markdown, or a Projection
+/// truncated mid-file — carries no Fingerprint and is refused as such.
+#[test]
+fn text_that_is_not_a_projection_is_refused() {
+    let original = fixture("vendor/docx-rs/paragraph.docx");
+    let projection = docxray::open(&original).expect("should project");
+
+    for (what, text) in [
+        ("hand-written markdown", "# Just a heading\n"),
+        ("empty", ""),
+        (
+            "truncated before the footer",
+            projection.text.lines().next().expect("a line"),
+        ),
+    ] {
+        let error = docxray::apply(&original, text, &projection.sidecar())
+            .err()
+            .unwrap_or_else(|| panic!("{what} should be refused"));
+        assert!(
+            matches!(error, docxray::Error::NotAProjection),
+            "{what}: expected NotAProjection, got: {error:?}"
+        );
+    }
 }
 
 /// The wording of a sidecar failure belongs to the core even though only a

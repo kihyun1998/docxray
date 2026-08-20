@@ -79,7 +79,7 @@ pub enum Error {
     /// Both Fingerprints are carried, not just rendered, so an adapter can
     /// report them without parsing this sentence back apart.
     #[error(
-        "this Projection was not made from the Original given: it records {recorded}, and the Original is {found}. Either the Original changed since it was projected, and the Projection must be re-opened, or this Projection has been paired with another document's sidecar. Nothing was written"
+        "the Original has changed since this Projection was made: the Projection records {recorded}, and the Original is now {found}. Project it again. Nothing was written"
     )]
     Stale {
         /// The Fingerprint the sidecar carries.
@@ -87,6 +87,33 @@ pub enum Error {
         /// The Fingerprint of the Original actually given.
         found: String,
     },
+
+    /// The Projection was made from a different document than the Original.
+    ///
+    /// Distinct from `Stale`, because the recovery is: this is the wrong file,
+    /// not this file is out of date.
+    #[error(
+        "this Projection was made from a different document (it records {recorded}), not from the Original given ({found}). Nothing was written"
+    )]
+    ForeignProjection {
+        /// The Fingerprint written into the Projection.
+        recorded: String,
+        /// The Fingerprint of the Original given.
+        found: String,
+    },
+
+    /// The sidecar belongs to a different document than the Projection does.
+    #[error(
+        "this Projection matches the Original given, but its sidecar was made from a different document, so its Anchors resolve to the wrong Blocks. Nothing was written"
+    )]
+    ForeignSidecar,
+
+    /// The text has no Fingerprint on its last line, so it is not a Projection
+    /// this build produced.
+    #[error(
+        "this is not a Projection docxray wrote: its last line carries no Fingerprint. It may have been truncated, or assembled by hand"
+    )]
+    NotAProjection,
 
     /// The Projection carries edits, and applying them is not implemented yet.
     #[error(
@@ -106,6 +133,26 @@ pub enum Error {
     /// the sentence back (`docs/agents/theflow.md`, Step 2).
     #[error("refusing to hand back a document that changed where nothing was edited: {}", render_differences(.0))]
     UntouchedPartsChanged(Vec<PartDifference>),
+}
+
+/// Splits a Projection into its Blocks and the Fingerprint on its last line.
+///
+/// Returns `None` when the last line is not a Fingerprint, which means the text
+/// is not a Projection this build wrote — a truncated file, or Markdown that
+/// never came from `open` at all.
+fn split_footer(projection: &str) -> Option<(&str, &str)> {
+    let text = projection.strip_suffix('\n').unwrap_or(projection);
+    // An editor that rewrote the file's line endings has not edited it, and the
+    // last line is where that shows up first.
+    let text = text.strip_suffix('\r').unwrap_or(text);
+    let at = text.rfind(FOOTER_PREFIX)?;
+    let footer = text[at + FOOTER_PREFIX.len()..].strip_suffix("-->")?;
+    // The footer must be the whole of the last line, not a comment that happens
+    // to sit at the end of a Block.
+    if at != 0 && !text[..at].ends_with('\n') {
+        return None;
+    }
+    Some((&text[..at], footer))
 }
 
 /// Joins differences into the one sentence an error renders them as.
@@ -167,6 +214,9 @@ impl Projection {
 
 /// The sidecar shape this build writes and understands.
 const SIDECAR_VERSION: u32 = 1;
+
+/// Opens the Projection's last line, which carries the Original's Fingerprint.
+const FOOTER_PREFIX: &str = "<!--docxray original=";
 
 #[derive(serde::Serialize)]
 struct Sidecar<'a> {
@@ -282,15 +332,37 @@ pub fn apply(original: &[u8], projection: &str, sidecar: &str) -> Result<Vec<u8>
         )));
     }
 
+    let Some((body, carried)) = split_footer(projection) else {
+        return Err(Error::NotAProjection);
+    };
+
     // Re-projecting is what makes everything below comparable: the same
     // Original always yields the same text and the same Anchors (ADR-0007).
     let current = open(original)?;
 
-    if stored.original != current.original {
-        return Err(Error::Stale {
-            recorded: stored.original,
-            found: current.original,
-        });
+    // Three ways for these to disagree, with three different recoveries, which
+    // is the whole reason the Fingerprint is written twice. Reading both tells
+    // an agent which file is the wrong one instead of leaving it to guess.
+    match (
+        carried == current.original,
+        stored.original == current.original,
+    ) {
+        (true, true) => {}
+        (false, true) => {
+            return Err(Error::ForeignProjection {
+                recorded: carried.to_owned(),
+                found: current.original,
+            });
+        }
+        (true, false) => return Err(Error::ForeignSidecar),
+        // Projection and sidecar agree with each other and not with the
+        // Original: the document moved underneath them.
+        (false, false) => {
+            return Err(Error::Stale {
+                recorded: stored.original,
+                found: current.original,
+            });
+        }
     }
     if stored.anchors != current.anchors {
         // Not "it belongs to another document" — a foreign sidecar would have
@@ -305,7 +377,8 @@ pub fn apply(original: &[u8], projection: &str, sidecar: &str) -> Result<Vec<u8>
 
     // A Projection that went through an editor which rewrites line endings has
     // not been edited, and refusing it would be a refusal nobody earned.
-    if projection.replace("\r\n", "\n") != current.text {
+    let (current_body, _) = split_footer(&current.text).expect("we just wrote that footer");
+    if body.replace("\r\n", "\n") != current_body {
         return Err(Error::EditNotSupported);
     }
 
@@ -377,6 +450,13 @@ fn render(
 
         anchors.push(Anchor { id, block: i });
     }
+
+    // The Fingerprint rides the last line, after every Block, so Block N is
+    // still line N and `outline`'s ranged reads are unaffected (ADR-0010). A
+    // leading line would shift every one of them.
+    text.push_str(FOOTER_PREFIX);
+    text.push_str(&original);
+    text.push_str("-->\n");
 
     Projection {
         text,

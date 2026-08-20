@@ -11,7 +11,20 @@ fn a_single_paragraph_becomes_one_anchored_line() {
     let p = docxray::open(&fixture("vendor/docx-rs/hello_libre_office.docx"))
         .expect("fixture should project");
 
-    assert_eq!(p.text, "Hello <!--p0-->\n");
+    let lines: Vec<&str> = p.text.lines().collect();
+    assert_eq!(lines[0], "Hello <!--p0-->");
+
+    // The Fingerprint rides the *last* line, so Block N stays line N and
+    // `outline`'s ranged reads are unaffected (ADR-0010).
+    assert_eq!(
+        lines.len(),
+        p.anchors.len() + 1,
+        "one line per Block, then the Fingerprint"
+    );
+    assert_eq!(
+        lines[lines.len() - 1],
+        format!("<!--docxray original={}-->", p.original)
+    );
     assert_eq!(p.anchors.len(), 1, "one Block, one Anchor");
     assert_eq!(p.anchors[0].id, "p0");
 }

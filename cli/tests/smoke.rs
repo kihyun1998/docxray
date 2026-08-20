@@ -54,7 +54,12 @@ fn open_writes_a_projection_and_its_sidecar() {
     );
 
     let dxr = std::fs::read_to_string(dir.join("hello.dxr")).expect("projection written");
-    assert_eq!(dxr, "Hello <!--p0-->\n");
+    let lines: Vec<&str> = dxr.lines().collect();
+    assert_eq!(lines[0], "Hello <!--p0-->");
+    assert!(
+        lines[lines.len() - 1].starts_with("<!--docxray original=sha256:"),
+        "the Projection should carry the Original's Fingerprint on its last line: {dxr}"
+    );
 
     let sidecar =
         std::fs::read_to_string(dir.join(".docxray/hello.json")).expect("sidecar written");

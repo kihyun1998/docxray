@@ -293,9 +293,10 @@ fn an_edited_projection_is_refused_rather_than_quietly_ignored() {
     let error = docxray::apply(&original, &edited, &projection.sidecar())
         .expect_err("an edited Projection should be refused, not silently dropped");
 
-    // Named, not sniffed for a substring: seven of the error variants contain
-    // the word "not", so `contains("not")` would be satisfied by every refusal
-    // `apply` can produce — including the ones this test exists to rule out.
+    // Named, not sniffed for a substring: eight of the twelve error variants
+    // contain the word "not" (counted, 2026-08-20), so `contains("not")` would
+    // be satisfied by every refusal `apply` can produce — including the ones
+    // this test exists to rule out.
     assert!(
         matches!(error, docxray::Error::EditNotSupported),
         "expected EditNotSupported, got: {error:?}"

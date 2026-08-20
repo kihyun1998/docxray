@@ -98,10 +98,14 @@ impl Package {
     /// deflate-level hint in the general-purpose flags, and the version-made-by
     /// and external-attribute bytes — 1832 of 25412 bytes on
     /// `korean-generated-export-long.docx`. Two consequences are worth naming
-    /// rather than filing under "metadata": a **directory entry comes back
-    /// marked as a regular file** (`0x41ed0000` becomes `0x81ed0010`), and the
-    /// attribute bytes are chosen from the *build host*, so the same document
-    /// rewritten on Windows and on Linux does not produce the same archive.
+    /// rather than filing under "metadata". Measured on `footnotes.docx`: a
+    /// **directory entry comes back marked as a regular file** — `0x41ed0000`
+    /// becomes `0x81ed0010`, `create_system` 3 becomes 0, `create_version` 46
+    /// becomes 10. Read in `zip`'s source but **not measured across hosts**:
+    /// `types.rs` picks that system byte with `cfg!(windows)`, so a Linux build
+    /// should emit different attribute bytes for the same document. Treat the
+    /// cross-host half as unconfirmed until someone diffs two builds.
+    ///
     /// Neither reaches a reader — a directory is still a zero-length entry with
     /// a trailing slash — and none of it is reachable by `compare_parts`, which
     /// compares decompressed part content by design (ADR-0008). Say "untouched

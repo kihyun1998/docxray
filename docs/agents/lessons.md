@@ -195,3 +195,150 @@ from XML "short text in a justified paragraph" is unremarkable. The defect was
 only visible to someone looking at a rendered page — which is the same reason
 opening output in Word is a release-gate item, arriving here from the other
 direction: not "does it open" but "does it still look like a document".
+
+---
+
+## A byte-perfect round trip that quietly dropped 1832 bytes
+
+**2026-08-20, #6.**
+
+`apply` copies every untouched entry with `zip`'s `raw_copy_file`, which streams
+the already-compressed bytes rather than re-deflating them. The part-by-part
+comparison came back clean across all seventeen fixtures, and the runtime
+pre-write check agreed. Then the output of a real CLI round trip turned out to
+be **1832 bytes smaller** than its input.
+
+Every compressed stream was byte-identical. Every CRC matched. Entry names,
+order and timestamps all survived. The missing bytes were entirely in the
+**local-header extra fields**:
+
+| Field | What it is | Fixtures carrying it |
+| ----- | ---------- | -------------------- |
+| `0xA220` | Word's OPC **Growth Hint** — padding reserved so a part can grow without rewriting the archive | 3 |
+| `0x5455`, `0x7875` | Info-ZIP extended timestamp and Unix uid/gid, left by LibreOffice | 5 |
+
+Neither is content, and neither is load-bearing — the first is a hint by
+definition and the second is meaningless in a `.docx` (and carries the author's
+uid). So this is not a defect. **It is a limit, and the reason to write it down
+is that no gate in this project can see it**: ADR-0008 makes decompressed parts
+the comparison surface precisely so that archive metadata cannot produce false
+failures, which means archive metadata also cannot produce true ones.
+
+**The clearance and its condition.** Dropping these is fine *as long as* nothing
+downstream reads them. That holds today. It stops holding the day something
+needs a Growth Hint preserved, and nothing in the test suite would say so.
+
+**The second half, found by the same probe.** Turning `raw_copy_file` off and
+re-deflating instead left every test green — because compression is not a
+comparison surface either. The raw-copy decision was documented and *unenforced*.
+`an_untouched_part_keeps_its_compression` now pins it, using `footnotes.docx`,
+the corpus's only entirely-STORED package. Red with the defect, green without,
+verified both ways.
+
+**The rule it earned.** *A comparison surface chosen to suppress false failures
+suppresses true ones on the same axis.* ADR-0008 excluded zip metadata for a good
+reason and the reason has not changed — but "the tests are blind here" is a
+property of that choice, not an accident, and it has to be stated where the
+choice is, or every later reader takes a green suite as coverage it never was.
+
+---
+
+## The duplicate-part guard could not see a duplicate part
+
+**2026-08-20, #6, found by the completeness pass.**
+
+`Package::parts()` walked the archive keeping a `HashSet` of names it had seen
+and returned `Error::DuplicatePart` on a repeat, with a doc comment saying "OPC
+part names are unique, so a package with two entries of the same name is refused
+rather than silently resolved to one of them."
+
+The check can never fire. `zip::ZipArchive` stores entries in an `IndexMap` keyed
+by raw name, so a duplicate has already collapsed by the time `parts()` runs —
+`archive.len()` *is* the deduplicated count. Every name it sees is unique by
+construction.
+
+Built a package with two `word/document.xml` entries and measured what actually
+happened:
+
+```
+dup.docx      10 entries, the second word/document.xml holding "EVIL!"
+docxray open  -> EVIL! <!--p0-->      the last entry silently won
+docxray apply -> exit 0
+dup.out.docx   9 entries
+```
+
+An entry present in the user's document was gone from the output, ADR-0006's
+pre-write comparison reported no differences, and the exit code said success.
+The comparison could not catch it because it compares the same already-collapsed
+view on both sides.
+
+**What it changed.** `Package::open` now reads the **end-of-central-directory
+record's own entry total** and refuses when it exceeds the number of addressable
+names. That is the only view that still sees both copies, because it is the
+archive's own declaration rather than the reader's interpretation of it. Verified
+both ways: red with the guard disabled, green with it, and green on all
+seventeen real fixtures — a hardening check that refuses real documents would be
+worse than the hole it closes.
+
+**The rule it earned.** *A guard written in terms of a library's view of the data
+inherits that view's blind spots.* The `seen` HashSet was not wrong about OPC —
+part names really are unique, and a violation really should be refused. It was
+wrong about **where** it stood: downstream of the exact normalisation that
+destroys the evidence. Ask what the layer below already collapsed before writing
+a check that depends on seeing it.
+
+This is the third entry here with the same shape — the wasm check that could not
+detect `std::fs`, the fixture gate that assumed `word/document.xml`, and now
+this. The pattern is not carelessness; it is that a check reads as correct
+exactly when its reasoning is plausible, and plausibility is what survives
+review. Only the probe distinguishes them.
+
+---
+
+## The fixture gate failed one run in twelve, on a different fixture each time
+
+**2026-08-20, #6, found while running the gate matrix.**
+
+`scripts/check-fixtures.sh` reported:
+
+```
+main part 'word/document.xml' declared but missing: tests/fixtures/korean-generated-export-long.docx
+```
+
+The fixture was fine — unmodified since #3, `git status` clean, and the entry
+plainly present. Run it again and it failed on `footnotes.docx`. Again, and it
+failed on `paragraph.docx`. **A different file every time**, which is the tell
+that the subject is not the fixture.
+
+The check was `unzip -l "$f" | grep -qF " $target"` under `set -o pipefail`.
+`grep -q` exits the instant it matches; `unzip` then writes into a closed pipe,
+takes SIGPIPE and exits 141; `pipefail` reports the pipeline as failed. Whether
+`unzip` had already finished writing when `grep` left is a race, so the check
+passed or failed by timing.
+
+Measured rather than argued, because an isolated one-line repro of the same
+pipeline came back clean six times out of six and would have exonerated it:
+
+| Form | Failures |
+| ---- | -------- |
+| `unzip -l \| grep -qF` (as written) | **1 of 12 runs** |
+| capture the names, match with `case` | 0 of 12 runs |
+
+**What it changed.** The check captures `unzip -Z1` output into a variable and
+matches with a shell `case` — no pipeline, so no SIGPIPE, and no `pipefail`
+interaction. Matching a whole line rather than a substring came along for free,
+so a part named `notword/document.xml` can no longer satisfy a check for
+`word/document.xml`. Probed both ways: still red for a package whose declared
+main part is absent, still red for a file that is not a zip, green on all
+seventeen real fixtures.
+
+**The rule it earned.** *A flaky gate is worse than a missing one, because it
+teaches people to re-run.* This repo already had two war stories about gates
+that could not fail; this is the mirror image — a gate that failed when nothing
+was wrong. Both erode the same thing. The first response to a red gate was
+"which fixture did I break?", and the answer was none: the correct first
+question is whether the **check** can be trusted, and the cheapest way to know
+is to run it again and see whether it accuses someone else.
+
+The bug shipped in #3 and survived every run since, because a gate that passes
+eleven times out of twelve looks like a gate that passes.

@@ -19,5 +19,13 @@ path = "src/lib.rs"
 quick-xml = "0.41.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+# The Fingerprint that detects a Stale Projection. Pure Rust, so it builds
+# for wasm unchanged.
+sha2 = { version = "0.10", default-features = false }
 thiserror = "2.0"
+zip = { version = "8.6.0", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+# The tests build deliberately damaged packages, so the comparison harness can
+# be shown to fail and not merely to pass.
 zip = { version = "8.6.0", default-features = false, features = ["deflate"] }

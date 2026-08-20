@@ -37,6 +37,11 @@ enum Command {
         /// The `.docx` to project.
         file: PathBuf,
     },
+    /// Patch a Projection's edits back into the document it came from.
+    Apply {
+        /// The `.dxr` to apply. Its Original and sidecar are found beside it.
+        file: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -59,30 +64,113 @@ fn main() -> ExitCode {
 fn run(command: Command) -> Result<(), String> {
     match command {
         Command::Open { file } => open(&file),
+        Command::Apply { file } => apply(&file),
     }
+}
+
+/// Writes through a temporary file in the same directory, then renames.
+///
+/// A plain write truncates its target before it fills it, so an interruption
+/// leaves a shortened file where a document was. Both references do it this way
+/// — docxengine `mkstemp` + `os.replace`, docx-cli write-then-rename — and
+/// ADR-0006's premise is that a `.docx` is often the only copy of something.
+fn write_atomically(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let mut tmp = path.as_os_str().to_os_string();
+    tmp.push(".docxray-tmp");
+    let tmp = PathBuf::from(tmp);
+
+    std::fs::write(&tmp, bytes).map_err(|e| format!("cannot write {}: {e}", tmp.display()))?;
+    std::fs::rename(&tmp, path).map_err(|e| {
+        let _ = std::fs::remove_file(&tmp);
+        format!("cannot write {}: {e}", path.display())
+    })
+}
+
+/// Where a document's sidecar lives, given its Projection. The coupling is
+/// invisible from the `.dxr` itself, so every message about it names the path
+/// (ADR-0006).
+///
+/// The `.json` is **appended** to the stem rather than swapped in with
+/// `with_extension`, which would replace everything after the *last* dot and so
+/// collapse `contract.v1` and `contract.v2` onto one sidecar. That is not a
+/// hypothetical filename: `apply` writes `report.out.docx`, so projecting the
+/// tool's own output would overwrite the sidecar of the document it came from.
+/// One sidecar per document is the whole point (ADR-0006) — a Projection
+/// carrying another document's Anchors is worse than one carrying none.
+fn sidecar_path(dxr: &Path) -> Result<PathBuf, String> {
+    let stem = dxr
+        .file_stem()
+        .ok_or_else(|| format!("{} has no file name", dxr.display()))?;
+    let mut name = stem.to_os_string();
+    name.push(".json");
+    Ok(dxr
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join(SIDECAR_DIR)
+        .join(name))
+}
+
+fn apply(dxr: &Path) -> Result<(), String> {
+    let projection =
+        std::fs::read_to_string(dxr).map_err(|e| format!("cannot read {}: {e}", dxr.display()))?;
+
+    // The Original sits beside its Projection under the same stem, which is
+    // where `open` put it.
+    let original_path = dxr.with_extension("docx");
+    let original = std::fs::read(&original_path)
+        .map_err(|e| format!("cannot read {}: {e}", original_path.display()))?;
+
+    let sidecar_path = sidecar_path(dxr)?;
+    let sidecar = match std::fs::read_to_string(&sidecar_path) {
+        Ok(text) => text,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            // The core says what is wrong and what has to happen; the adapter
+            // adds the path and the command, which are its own policy.
+            return Err(format!(
+                "{}\n  expected it at {}\n  run: docxray open {}",
+                docxray::Error::SidecarMissing,
+                sidecar_path.display(),
+                original_path.display()
+            ));
+        }
+        Err(e) => return Err(format!("cannot read {}: {e}", sidecar_path.display())),
+    };
+
+    let produced = docxray::apply(&original, &projection, &sidecar).map_err(|e| e.to_string())?;
+
+    // Never over the Original: a `.docx` is often the only copy of something
+    // (ADR-0006). Overwriting will need an explicit flag.
+    let out = dxr.with_extension("out.docx");
+    write_atomically(&out, &produced)?;
+
+    println!("{} -> {}", dxr.display(), out.display());
+    Ok(())
 }
 
 fn open(file: &Path) -> Result<(), String> {
     let bytes = std::fs::read(file).map_err(|e| format!("cannot read {}: {e}", file.display()))?;
     let projection = docxray::open(&bytes).map_err(|e| e.to_string())?;
 
-    let stem = file
-        .file_stem()
-        .ok_or_else(|| format!("{} has no file name", file.display()))?;
-
     let dxr = file.with_extension("dxr");
-    std::fs::write(&dxr, &projection.text)
-        .map_err(|e| format!("cannot write {}: {e}", dxr.display()))?;
+    // Reading a document already named `.dxr` would otherwise write the
+    // Projection straight over the document it was made from, and report
+    // success doing it.
+    if dxr == file {
+        return Err(format!(
+            "refusing to project {} onto itself: its Projection would be written to the same path. Rename it to .docx first",
+            file.display()
+        ));
+    }
+    write_atomically(&dxr, projection.text.as_bytes())?;
 
     // One sidecar per document rather than a single shared file: two documents
     // projected in the same directory would otherwise overwrite each other's
     // Anchors, and a Projection whose sidecar belongs to another document is
     // worse than one with no sidecar at all.
-    let dir = dxr.parent().unwrap_or(Path::new(".")).join(SIDECAR_DIR);
-    std::fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
-    let sidecar = dir.join(stem).with_extension("json");
-    std::fs::write(&sidecar, projection.sidecar())
-        .map_err(|e| format!("cannot write {}: {e}", sidecar.display()))?;
+    let sidecar = sidecar_path(&dxr)?;
+    let dir = sidecar.parent().unwrap_or(Path::new("."));
+    std::fs::create_dir_all(dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    write_atomically(&sidecar, projection.sidecar().as_bytes())?;
 
     println!(
         "{} — {} blocks -> {}",

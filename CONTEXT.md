@@ -22,6 +22,10 @@ _Avoid_: round-trip, reverse conversion, re-export
 The state of a Projection whose Original has changed since the Projection was made. Patch-back on a Stale Projection is refused.
 _Avoid_: outdated, dirty, out-of-sync
 
+**Fingerprint**:
+The recorded identity of the Original a Projection was made from, carried in its sidecar. Patch-back recomputes it and refuses when it no longer matches, which is how a Projection is found to be Stale — or found to have been paired with another document's sidecar.
+_Avoid_: checksum, hash, digest, etag
+
 ### Addressing
 
 **Block**:

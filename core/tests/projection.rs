@@ -1,15 +1,8 @@
 //! Tests drive the core crate's public API, never the CLI (ADR-0008).
 
-use std::fs;
-use std::path::PathBuf;
+mod common;
 
-fn fixture(name: &str) -> Vec<u8> {
-    let mut p = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    p.pop();
-    p.push("tests/fixtures");
-    p.push(name);
-    fs::read(&p).unwrap_or_else(|e| panic!("fixture {}: {e}", p.display()))
-}
+use common::fixture;
 
 /// The smallest possible whole path: a one-paragraph document becomes one
 /// anchored line of Markdown.

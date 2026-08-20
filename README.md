@@ -4,7 +4,17 @@ Surgical DOCX editing for AI agents — project a Word document into an editable
 
 Conversion loses everything the intermediate format has no slot for: per-run fonts, character shading, spacing, section setup, comments, tracked changes. docxray never converts. The original stays the source of truth, the projection is a disposable view, and only the blocks that changed are rewritten.
 
-**Status: early. The skeleton builds; the document work is not written yet.** See [issue #1](https://github.com/kihyun1998/docxray/issues/1) for the v1 spec and its tickets.
+**Status: early.** A prose document projects, and patching back with no edits returns it unchanged. Applying an actual edit is the next slice and is refused until it exists. Tables, `outline` and `check` are not written yet. See [issue #1](https://github.com/kihyun1998/docxray/issues/1) for the v1 spec and its tickets.
+
+## The loop
+
+```sh
+docxray open report.docx     # -> report.dxr, and .docxray/report.json beside it
+                             #    edit report.dxr with ordinary text tools
+docxray apply report.dxr     # -> report.out.docx
+```
+
+`apply` never writes over the Original: a `.docx` is often the only copy of something. It refuses a Projection whose Original moved underneath it, and it compares its own output against the Original part by part before handing it back.
 
 ## Layout
 
@@ -33,9 +43,10 @@ cargo test --workspace
 cargo doc --no-deps -p docxray
 cargo check -p docxray --target wasm32-unknown-unknown
 bash scripts/check-core-io-free.sh
+bash scripts/check-fixtures.sh
 ```
 
-The last one enforces the core's IO-free contract. The wasm check does not — `wasm32-unknown-unknown` compiles `std::fs` happily and only fails at runtime, which is why both are here.
+`check-core-io-free.sh` enforces the core's IO-free contract. The wasm check does not — `wasm32-unknown-unknown` compiles `std::fs` happily and only fails at runtime, which is why both are here. `check-fixtures.sh` guards the corpus every test at the seam depends on.
 
 ## Design
 

@@ -104,6 +104,16 @@ members so far:
   `word/document.xml` — it is resolved through the `officeDocument` relationship
   in `_rels/.rels`, and Word Online writes `word/document2.xml`. Confirmed
   against a real fixture; see `docs/agents/lessons.md`.
+- **Zip local-header extra fields.** Eight of the seventeen fixtures carry them:
+  `0xA220`, Word's OPC Growth Hint (padding reserved so a part can grow in
+  place), and `0x5455`/`0x7875`, Info-ZIP timestamps and Unix ownership left by
+  LibreOffice. A raw entry copy drops all of them — 1832 bytes on
+  `korean-generated-export-long.docx`, measured. Nothing in a part-by-part
+  comparison can see it, by construction (ADR-0008). See `#6`.
+- **Zip archive shape** — entry order, compression method per entry, and
+  directory entries. Seven fixtures carry directory entries; `footnotes.docx` is
+  entirely STORED; `[Content_Types].xml` is not first in five of them. All open
+  in Word, so none of it is normalisable toward a canonical form.
 
 ### The project's own map
 
@@ -156,7 +166,13 @@ wraps the same errors.
   writer share a bug, project-then-apply is self-consistent and Word still
   refuses the result. Our tests cannot detect this because they only compare us
   against ourselves.
-  - CI runs OOXML **schema validation** on output — cheap, every commit.
+  - OOXML **schema validation** of output was written here as a standing CI gate.
+    It is **not implemented** — `.github/workflows/ci.yml` has no such step, and
+    saying otherwise made a gate that cannot fail read as one that does. It was
+    harmless while nothing produced output; `#6` changed that. It only becomes
+    load-bearing once a part is actually rewritten (`#7`), because until then
+    every output part is a byte copy of an input part and validating it would
+    validate the fixtures.
   - **Opening the output in Word is a release-gate item for a person.** Schema-legal
     and Word-opens-it are different claims, and only the second one matters.
 - **Zip bytes are not a comparison surface.** Entry order, timestamps and

@@ -35,6 +35,49 @@ Same comment as the Anchor, so there is one marker per Block. Prior art again: a
 
 Run-level formatting has no handles at all. Bold, italic and underline round-trip through Markdown; everything else falls to the Block's Dominant Format (ADR-0003).
 
+## The last line carries the Original's Fingerprint
+
+*Amended 2026-08-20, during #6.*
+
+A Projection ends with one more line than it has Blocks:
+
+```markdown
+# Quarterly report <!--p11-->
+Revenue rose **12%** against the prior year. <!--p12-->
+<!--docxray original=sha256:3e4df52f926f2479357fcb1b6f93575f645060e16a2c50cd9271f4fa8530c873-->
+```
+
+Without it nothing tied a `.dxr` to the document it came from. The sidecar
+recorded a Fingerprint, but the sidecar is a separate file located by filename,
+so replacing a Projection's *contents* with another document's was undetectable:
+`apply` compared the text against a fresh projection of the Original, found it
+different, and reported **"this Projection has been edited"** — the wrong file
+diagnosed as the wrong content, which sends an agent to fix its prose instead of
+its paths. Measured before the change; it now reports a foreign Projection.
+
+**Last line, not first.** A leading line would shift every Block by one and
+break the ranged read `outline` exists for. Trailing leaves Block *N* on line
+*N* and costs only the total.
+
+**The Fingerprint is deliberately written twice** — once here, once in the
+sidecar — because the pair is what makes a diagnosis possible at all. One value
+can only say "something does not match"; two say *which file is the wrong one*,
+and the three recoveries are different:
+
+| Projection | Sidecar | What happened | What to do |
+| ---------- | ------- | ------------- | ---------- |
+| matches | matches | nothing is wrong | — |
+| differs | matches | the Projection came from another document | use the right `.dxr` |
+| matches | differs | the sidecar came from another document | fix the sidecar's path |
+| differs | differs | the Original moved underneath both | project it again |
+
+The third row is the one ADR-0006 calls worse than having no sidecar at all,
+because those Anchors resolve — to the wrong Blocks. Before this line existed it
+was indistinguishable from the fourth.
+
+A text whose last line is not a Fingerprint is not a Projection this build
+wrote, and is refused as such rather than parsed hopefully.
+
 ## Tables come in two forms
 
 Real tables are overwhelmingly simple. In the vendored corpus and in the first real document we inspected — 3 tables, 42 cells — the count of merged cells was zero. So the common case keeps ordinary Markdown, and only tables that need more pay for it.
@@ -109,5 +152,5 @@ This exists because rendering `nested_table.docx` through an earlier draft of th
 
 - The Projection parser must accept both table forms, and the renderer must choose between them per table. The choice is a pure function of the table's geometry, so it is not a decision the agent ever makes.
 - Grid form is where a span mismatch becomes possible, so it is where validation has to be strictest — an edit whose `span` values no longer sum to the grid width is refused, never repaired (ADR-0003).
-- One line per Block means a Projection's line count is its Block count, which is what makes `outline`'s line numbers usable for a ranged read (ADR-0006).
+- One line per Block means **Block *N* is line *N***, which is what makes `outline`'s line numbers usable for a ranged read (ADR-0006). The Fingerprint line above makes the line *count* one greater than the Block count; that is why it goes last, where it changes the total without moving any Block.
 - Nothing here gives an agent a way to name a run, a section, or an unmodelled element. That is deliberate: what the grammar cannot address, an edit cannot damage.

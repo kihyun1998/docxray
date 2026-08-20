@@ -54,7 +54,12 @@ fn open_writes_a_projection_and_its_sidecar() {
     );
 
     let dxr = std::fs::read_to_string(dir.join("hello.dxr")).expect("projection written");
-    assert_eq!(dxr, "Hello <!--p0-->\n");
+    let lines: Vec<&str> = dxr.lines().collect();
+    assert_eq!(lines[0], "Hello <!--p0-->");
+    assert!(
+        lines[lines.len() - 1].starts_with("<!--docxray original=sha256:"),
+        "the Projection should carry the Original's Fingerprint on its last line: {dxr}"
+    );
 
     let sidecar =
         std::fs::read_to_string(dir.join(".docxray/hello.json")).expect("sidecar written");
@@ -89,6 +94,390 @@ fn open_refuses_something_that_is_not_a_package() {
     assert!(
         !dir.join("not-a.dxr").exists(),
         "nothing should be written when projection fails"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A scratch directory holding a copy of a fixture, so a test never writes
+/// anywhere near the corpus.
+fn scratch(name: &str, fixture: &str) -> std::path::PathBuf {
+    let dir = std::env::temp_dir().join(format!("docxray-smoke-{name}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let mut source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    source.pop();
+    source.push("tests/fixtures");
+    source.push(fixture);
+    std::fs::copy(&source, dir.join("report.docx")).expect("copy fixture");
+    dir
+}
+
+fn docxray(args: &[&str]) -> std::process::Output {
+    Command::new(env!("CARGO_BIN_EXE_docxray"))
+        .args(args)
+        .output()
+        .expect("binary should run")
+}
+
+/// The whole loop through the adapter: project a document, patch it back with
+/// no edits, and the Original is still sitting there untouched beside a new
+/// file (ADR-0006 — `apply` never overwrites).
+#[test]
+fn apply_writes_a_new_document_and_leaves_the_original_alone() {
+    let dir = scratch("apply", "vendor/docx-rs/hello_libre_office.docx");
+    let docx = dir.join("report.docx");
+    let before = std::fs::read(&docx).expect("the original");
+
+    let opened = docxray(&["open", docx.to_str().expect("utf-8 path")]);
+    assert!(
+        opened.status.success(),
+        "open failed: {}",
+        String::from_utf8_lossy(&opened.stderr)
+    );
+
+    let dxr = dir.join("report.dxr");
+    let applied = docxray(&["apply", dxr.to_str().expect("utf-8 path")]);
+    assert!(
+        applied.status.success(),
+        "apply failed: {}",
+        String::from_utf8_lossy(&applied.stderr)
+    );
+
+    let produced = std::fs::read(dir.join("report.out.docx")).expect("a new document is written");
+    assert_eq!(
+        docxray::compare_parts(&before, &produced).expect("both are packages"),
+        vec![],
+        "the new document should be identical to the Original, part by part"
+    );
+    assert_eq!(
+        std::fs::read(&docx).expect("the original"),
+        before,
+        "the Original itself must not be touched"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The sidecar coupling is invisible from the `.dxr`, so losing it has to fail
+/// loudly and say where the file should have been (ADR-0006). The core supplies
+/// the sentence; the adapter supplies the path and the command, because both
+/// are its policy.
+#[test]
+fn apply_refuses_loudly_when_the_sidecar_is_gone() {
+    let dir = scratch("nosidecar", "vendor/docx-rs/hello_libre_office.docx");
+    let docx = dir.join("report.docx");
+
+    let opened = docxray(&["open", docx.to_str().expect("utf-8 path")]);
+    assert!(opened.status.success(), "open should succeed");
+    std::fs::remove_dir_all(dir.join(".docxray")).expect("remove the sidecar");
+
+    let dxr = dir.join("report.dxr");
+    let applied = docxray(&["apply", dxr.to_str().expect("utf-8 path")]);
+
+    assert!(!applied.status.success(), "should exit non-zero");
+    let said = String::from_utf8_lossy(&applied.stderr).to_string();
+    assert!(
+        said.contains("no sidecar"),
+        "should say what is wrong: {said}"
+    );
+    assert!(
+        said.contains(".docxray") && said.contains("docxray open"),
+        "should name where it looked and how to get it back: {said}"
+    );
+    assert!(
+        !dir.join("report.out.docx").exists(),
+        "nothing should be written when applying is refused"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Two documents whose names differ only after the first dot must not share a
+/// sidecar. Swapping in a `.json` extension replaces everything after the *last*
+/// dot, which silently collapsed `contract.v1` and `contract.v2` onto one file —
+/// and `apply` writes `report.out.docx`, so projecting the tool's own output
+/// destroyed the sidecar of the document it came from.
+///
+/// ADR-0006 calls a Projection carrying another document's Anchors worse than
+/// one carrying none, because those Anchors resolve — to the wrong nodes.
+#[test]
+fn documents_with_dots_in_their_names_keep_separate_sidecars() {
+    let dir = std::env::temp_dir().join("docxray-smoke-dotted");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let mut corpus = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    corpus.pop();
+    corpus.push("tests/fixtures/vendor/docx-rs");
+
+    // Deliberately different documents: if they shared a sidecar, the second
+    // `open` would overwrite the first's Anchors and the first `apply` would
+    // refuse as Stale.
+    std::fs::copy(
+        corpus.join("hello_libre_office.docx"),
+        dir.join("contract.v1.docx"),
+    )
+    .expect("copy fixture");
+    std::fs::copy(corpus.join("paragraph.docx"), dir.join("contract.v2.docx"))
+        .expect("copy fixture");
+
+    for name in ["contract.v1.docx", "contract.v2.docx"] {
+        let out = docxray(&["open", dir.join(name).to_str().expect("utf-8 path")]);
+        assert!(
+            out.status.success(),
+            "open {name} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    for name in ["contract.v1.json", "contract.v2.json"] {
+        assert!(
+            dir.join(".docxray").join(name).exists(),
+            "each document should get its own sidecar; {name} is missing"
+        );
+    }
+
+    // The consequence, not just the filename: both must still apply. Sharing a
+    // sidecar is caught by the Fingerprint, so the symptom is a refusal here.
+    for name in ["contract.v1.dxr", "contract.v2.dxr"] {
+        let out = docxray(&["apply", dir.join(name).to_str().expect("utf-8 path")]);
+        assert!(
+            out.status.success(),
+            "apply {name} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The same collision reached through the tool's own naming: `apply` produces
+/// `report.out.docx`, and projecting that must not disturb `report.docx`.
+#[test]
+fn projecting_our_own_output_does_not_disturb_the_first_sidecar() {
+    let dir = scratch("selfoutput", "vendor/docx-rs/hello_libre_office.docx");
+    let docx = dir.join("report.docx");
+
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "open should succeed"
+    );
+    let first = std::fs::read_to_string(dir.join(".docxray/report.json")).expect("a sidecar");
+
+    assert!(
+        docxray(&[
+            "apply",
+            dir.join("report.dxr").to_str().expect("utf-8 path")
+        ])
+        .status
+        .success(),
+        "apply should succeed"
+    );
+    assert!(
+        docxray(&[
+            "open",
+            dir.join("report.out.docx").to_str().expect("utf-8 path")
+        ])
+        .status
+        .success(),
+        "projecting the output should succeed"
+    );
+
+    assert_eq!(
+        std::fs::read_to_string(dir.join(".docxray/report.json")).expect("still there"),
+        first,
+        "the first document's sidecar must be untouched"
+    );
+    assert!(
+        dir.join(".docxray/report.out.json").exists(),
+        "the output should get a sidecar of its own"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `open` writes its Projection to the input's path with the extension swapped
+/// for `.dxr`. Handed a document already called `.dxr`, that is the same path —
+/// so it overwrote the document with its own Projection and exited zero.
+/// Measured: 4132 bytes of Word document became 16 bytes of Markdown.
+#[test]
+fn open_refuses_to_project_a_document_onto_itself() {
+    let dir = std::env::temp_dir().join("docxray-smoke-selfwrite");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("temp dir");
+
+    let mut source = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    source.pop();
+    source.push("tests/fixtures/vendor/docx-rs/hello_libre_office.docx");
+    let victim = dir.join("mydoc.dxr");
+    std::fs::copy(&source, &victim).expect("copy fixture");
+    let before = std::fs::read(&victim).expect("the document");
+
+    let out = docxray(&["open", victim.to_str().expect("utf-8 path")]);
+
+    assert!(!out.status.success(), "should exit non-zero");
+    assert_eq!(
+        std::fs::read(&victim).expect("the document"),
+        before,
+        "the document must not have been overwritten by its own Projection"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// Outputs are written through a temporary file and renamed, so an interrupted
+/// write cannot leave a shortened file where a document was. The observable
+/// part is that no temporary survives a successful run.
+#[test]
+fn writing_leaves_no_temporary_behind() {
+    let dir = scratch("atomic", "vendor/docx-rs/hello_libre_office.docx");
+    let docx = dir.join("report.docx");
+
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "open should succeed"
+    );
+    assert!(
+        docxray(&[
+            "apply",
+            dir.join("report.dxr").to_str().expect("utf-8 path")
+        ])
+        .status
+        .success(),
+        "apply should succeed"
+    );
+
+    let mut strays = Vec::new();
+    for base in [dir.clone(), dir.join(".docxray")] {
+        for entry in std::fs::read_dir(&base).expect("readable") {
+            let path = entry.expect("an entry").path();
+            if path.to_string_lossy().contains("docxray-tmp") {
+                strays.push(path);
+            }
+        }
+    }
+    assert!(strays.is_empty(), "temporaries left behind: {strays:?}");
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `open` used to replace an edited Projection with a fresh one under exit 0,
+/// destroying whatever the agent had written. The guard compares content rather
+/// than existence, so re-projecting an *unedited* Projection — the documented
+/// recovery from a Stale one — still goes through silently.
+#[test]
+fn open_refuses_to_discard_an_edited_projection() {
+    let dir = scratch("editedproj", "vendor/docx-rs/paragraph.docx");
+    let docx = dir.join("report.docx");
+    let dxr = dir.join("report.dxr");
+
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "first open should succeed"
+    );
+
+    // Re-projecting an untouched Projection is the ordinary recovery path and
+    // must not need a flag.
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "re-projecting an unedited Projection should not be refused"
+    );
+
+    let edited = "AGENT EDIT IN PROGRESS <!--p0-->\n";
+    std::fs::write(&dxr, edited).expect("write an edit");
+
+    let out = docxray(&["open", docx.to_str().expect("utf-8 path")]);
+    assert!(!out.status.success(), "should exit non-zero");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("--force"),
+        "should say how to override: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(&dxr).expect("the projection"),
+        edited,
+        "the edit must survive"
+    );
+
+    // And --force does what it says.
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path"), "--force"])
+            .status
+            .success(),
+        "--force should overwrite"
+    );
+    assert_ne!(
+        std::fs::read_to_string(&dxr).expect("the projection"),
+        edited,
+        "--force should have replaced it"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// `apply` writes `<stem>.out.docx`, which is a name a user's own document can
+/// have. It replaced a 9241-byte unrelated document with its output under exit
+/// 0. Re-applying its *own* output is unaffected, because `apply` is
+/// deterministic — the bytes match, so the guard never sees a difference.
+#[test]
+fn apply_refuses_to_overwrite_a_document_it_did_not_produce() {
+    let dir = scratch("outcollide", "vendor/docx-rs/paragraph.docx");
+    let docx = dir.join("report.docx");
+    let out = dir.join("report.out.docx");
+
+    let mut other = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    other.pop();
+    other.push("tests/fixtures/korean-generated-export.docx");
+    std::fs::copy(&other, &out).expect("an unrelated document sits there");
+    let victim = std::fs::read(&out).expect("the victim");
+
+    assert!(
+        docxray(&["open", docx.to_str().expect("utf-8 path")])
+            .status
+            .success(),
+        "open should succeed"
+    );
+
+    let attempt = docxray(&[
+        "apply",
+        dir.join("report.dxr").to_str().expect("utf-8 path"),
+    ]);
+    assert!(!attempt.status.success(), "should exit non-zero");
+    assert_eq!(
+        std::fs::read(&out).expect("the victim"),
+        victim,
+        "the unrelated document must be intact"
+    );
+
+    // With --force it proceeds, and re-applying afterwards needs no flag at all.
+    assert!(
+        docxray(&[
+            "apply",
+            dir.join("report.dxr").to_str().expect("utf-8 path"),
+            "--force"
+        ])
+        .status
+        .success(),
+        "--force should proceed"
+    );
+    assert!(
+        docxray(&[
+            "apply",
+            dir.join("report.dxr").to_str().expect("utf-8 path")
+        ])
+        .status
+        .success(),
+        "re-applying over our own identical output must not need --force"
     );
 
     let _ = std::fs::remove_dir_all(&dir);

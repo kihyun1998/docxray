@@ -43,10 +43,23 @@ while IFS= read -r -d '' f; do
     continue
   fi
 
-  if ! unzip -l "$f" 2>/dev/null | grep -qF " $target"; then
-    echo "main part '$target' declared but missing: $f"
-    fail=1
-  fi
+  # Capture the names, then match in the shell. Streaming `unzip -Z1 | grep -q`
+  # is what this used to do, and it failed about one run in twelve: grep exits
+  # the moment it matches, unzip dies of SIGPIPE with 141, and `pipefail` turns
+  # that into a failed pipeline — so a perfectly good fixture was reported
+  # missing, a different one each time. Measured, not deduced.
+  #
+  # The `case` also matches a whole name rather than a substring, so a part
+  # called `notword/document.xml` can no longer satisfy a check for
+  # `word/document.xml`.
+  names=$(unzip -Z1 "$f" 2>/dev/null)
+  case $'\n'"$names"$'\n' in
+    *$'\n'"$target"$'\n'*) ;;
+    *)
+      echo "main part '$target' declared but missing: $f"
+      fail=1
+      ;;
+  esac
 done < <(find tests/fixtures -name '*.docx' -print0)
 
 if [ "$count" -eq 0 ]; then

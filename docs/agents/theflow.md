@@ -117,7 +117,7 @@ members so far:
 
 ### The project's own map
 
-**None.** docxray keeps no dependency or territory graph. `CONTEXT.md` and the
+**None.** docxray keeps no dependency or territory graph. `GLOSSARY.md` and the
 ADR index cover vocabulary and decisions but are not a map. Recorded here as an
 absence rather than an unfilled section.
 
@@ -208,7 +208,7 @@ This is also the only surface where the second, refuting lens is worth its cost.
 
 ## Step 6 — behavior-describing surfaces
 
-- `CONTEXT.md` — the glossary. Any new domain term lands here.
+- `GLOSSARY.md` — the glossary. Any new domain term lands here.
 - `docs/adr/` — decision records. **0001–0009, all accepted.**
 - `README.md` — the workflow and the worked example.
 - `tests/fixtures/README.md` — what each fixture exercises and where it came from.

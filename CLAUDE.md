@@ -12,7 +12,7 @@ The five canonical triage roles, used verbatim: `needs-triage`, `needs-info`, `r
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
+Single-context: one `GLOSSARY.md` at the repo root plus `docs/adr/`. See `docs/agents/domain.md`.
 
 ### Working discipline
 

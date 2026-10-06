@@ -3,7 +3,7 @@
 //! A Word document (the **Original**) is projected into an editable text view
 //! (a **Projection**); edits made there are patched back into the Original by
 //! rewriting only the nodes that changed, so untouched content stays
-//! byte-identical. See `CONTEXT.md` for the vocabulary and `docs/adr/` for the
+//! byte-identical. See `GLOSSARY.md` for the vocabulary and `docs/adr/` for the
 //! decisions behind it.
 //!
 //! This crate is the product; the `docxray` command-line tool is one adapter

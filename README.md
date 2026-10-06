@@ -52,7 +52,7 @@ bash scripts/check-fixtures.sh
 
 ## Design
 
-Decisions live in [`docs/adr/`](docs/adr/) and the vocabulary in [`CONTEXT.md`](CONTEXT.md). Where a document and an ADR disagree, the ADR wins.
+Decisions live in [`docs/adr/`](docs/adr/) and the vocabulary in [`GLOSSARY.md`](GLOSSARY.md). Where a document and an ADR disagree, the ADR wins.
 
 docxray is not the first tool in this space, and it does not pretend to be — [ADR-0009](docs/adr/0009-position-relative-to-prior-art.md) names the prior art it reads and says why the project continues anyway.
 
